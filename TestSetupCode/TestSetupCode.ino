@@ -16,6 +16,10 @@ const int button4Pin = A4;  // start
 // Tilt sensor (INPUT_PULLUP → LOW = upright, HIGH = flipped)
 const int tiltPin = A5;
 
+// RGB-ledtype: false = common cathode, true = common anode
+// Zet dit op true wanneer jouw leds omgekeerd reageren.
+const bool RGB_COMMON_ANODE = false;
+
 // RGB LED 1 (boven)
 const int led1R = 9;
 const int led1G = 10;
@@ -66,9 +70,21 @@ unsigned long tiltChangeTime = 0;
 const unsigned long DEBOUNCE_MS = 300;
 
 // --------------------------------------------------
-// Knopstatus (voor stijgende flank detectie)
+// Knopstatus met debounce (voor stijgende flank detectie)
 // --------------------------------------------------
-bool prevBtn1 = LOW, prevBtn2 = LOW, prevBtn3 = LOW, prevBtn4 = LOW;
+struct ButtonState {
+  int pin;
+  bool lastReading;
+  bool stableState;
+  unsigned long lastChangeTime;
+};
+
+const unsigned long BUTTON_DEBOUNCE_MS = 50;
+
+ButtonState button1 = { button1Pin, LOW, LOW, 0 };
+ButtonState button2 = { button2Pin, LOW, LOW, 0 };
+ButtonState button3 = { button3Pin, LOW, LOW, 0 };
+ButtonState button4 = { button4Pin, LOW, LOW, 0 };
 
 // --------------------------------------------------
 // Knipperlogica (voor STUDIE_KLAAR / PAUZE_KLAAR)
@@ -76,6 +92,11 @@ bool prevBtn1 = LOW, prevBtn2 = LOW, prevBtn3 = LOW, prevBtn4 = LOW;
 unsigned long lastBlinkTime = 0;
 bool blinkOn = false;
 const unsigned long BLINK_INTERVAL = 250;
+
+// --------------------------------------------------
+// LCD-refresh: alleen herschrijven wanneer de minuut verandert
+// --------------------------------------------------
+int laatstGetoondeMinuut = -1;
 
 // --------------------------------------------------
 // Pauze kleur (1 van 4, random gekozen)
@@ -86,16 +107,20 @@ int pauzeKleur = 0;
 // --------------------------------------------------
 // Hulpfuncties LED
 // --------------------------------------------------
+int ledWaarde(int waarde) {
+  return RGB_COMMON_ANODE ? 255 - waarde : waarde;
+}
+
 void setLED1(int r, int g, int b) {
-  analogWrite(led1R, r);
-  analogWrite(led1G, g);
-  analogWrite(led1B, b);
+  analogWrite(led1R, ledWaarde(r));
+  analogWrite(led1G, ledWaarde(g));
+  analogWrite(led1B, ledWaarde(b));
 }
 
 void setLED2(int r, int g, int b) {
-  analogWrite(led2R, r);
-  analogWrite(led2G, g);
-  analogWrite(led2B, b);
+  analogWrite(led2R, ledWaarde(r));
+  analogWrite(led2G, ledWaarde(g));
+  analogWrite(led2B, ledWaarde(b));
 }
 
 void ledsUit() {
@@ -153,8 +178,12 @@ void lcdRegel(int rij, const char* tekst) {
 void toonMinuten(unsigned long verstreken, unsigned long totaal) {
   unsigned long resterend = (verstreken >= totaal) ? 0 : totaal - verstreken;
   unsigned int minuten = (resterend + 59999) / 60000; // afgerond naar boven
+
+  if ((int)minuten == laatstGetoondeMinuut) return;
+  laatstGetoondeMinuut = minuten;
+
   char buf[17];
-  snprintf(buf, sizeof(buf), "%d min", minuten);
+  snprintf(buf, sizeof(buf), "%u min", minuten);
   lcdRegel(1, buf);
 }
 
@@ -197,6 +226,7 @@ void startStudieTimer() {
   currentState = STUDIE_TIMER;
   huidigeDuur  = (unsigned long)studieminuten * 60UL * 1000UL;
   timerStart   = millis();
+  laatstGetoondeMinuut = -1;
   lcdRegel(0, "Studying...");
 }
 
@@ -204,6 +234,7 @@ void startPauzeTimer() {
   currentState = PAUZE_TIMER;
   huidigeDuur  = (unsigned long)pauzeminuten * 60UL * 1000UL;
   timerStart   = millis();
+  laatstGetoondeMinuut = -1;
   pauzeKleur   = random(0, 4);
 
   switch (pauzeKleur) {
@@ -231,8 +262,11 @@ void handleStartscherm(bool btn1, bool btn4) {
     }
   }
 
-  if (btn1) naarMenuStudie();   // tandwiel → instellingen
-  if (btn4) naarMenuKlaar();    // start → direct naar klaar-scherm
+  if (btn1) {
+    naarMenuStudie();   // tandwiel → instellingen
+  } else if (btn4) {
+    naarMenuKlaar();    // start → direct naar klaar-scherm
+  }
 }
 
 void handleMenuStudie(bool btn1, bool btn2, bool btn3, bool btn4) {
@@ -265,9 +299,12 @@ void handleMenuPauze(bool btn1, bool btn2, bool btn3, bool btn4) {
   if (btn1 || btn4) naarMenuKlaar(); // tandwiel of start → klaar scherm
 }
 
-void handleMenuKlaar(bool btn1, bool omgedraaid) {
-  if (btn1)        naarMenuStudie();  // tandwiel → terug naar instellingen
-  if (omgedraaid)  startStudieTimer(); // omdraaien → start!
+void handleMenuKlaar(bool btn1, bool tiltGewijzigd) {
+  if (btn1) {
+    naarMenuStudie();       // tandwiel → terug naar instellingen
+  } else if (tiltGewijzigd) {
+    startStudieTimer();     // omdraaien → start!
+  }
 }
 
 void handleStudieTimer() {
@@ -327,6 +364,26 @@ bool tiltVeranderd() {
 }
 
 // --------------------------------------------------
+// Knop debounce: geeft true terug bij een stabiele LOW → HIGH-overgang
+// --------------------------------------------------
+bool knopIngedrukt(ButtonState &button) {
+  bool reading = digitalRead(button.pin);
+
+  if (reading != button.lastReading) {
+    button.lastChangeTime = millis();
+    button.lastReading = reading;
+  }
+
+  if ((millis() - button.lastChangeTime >= BUTTON_DEBOUNCE_MS) &&
+      (reading != button.stableState)) {
+    button.stableState = reading;
+    return button.stableState == HIGH;
+  }
+
+  return false;
+}
+
+// --------------------------------------------------
 // Setup
 // --------------------------------------------------
 void setup() {
@@ -341,7 +398,8 @@ void setup() {
   pinMode(led1R, OUTPUT); pinMode(led1G, OUTPUT); pinMode(led1B, OUTPUT);
   pinMode(led2R, OUTPUT); pinMode(led2G, OUTPUT); pinMode(led2B, OUTPUT);
 
-  randomSeed(analogRead(A3));
+  // A3 is aangesloten op een knop en levert daarom geen goede random seed.
+  randomSeed(micros());
 
   stableTiltState = digitalRead(tiltPin);
   lastTiltState   = stableTiltState;
@@ -353,30 +411,23 @@ void setup() {
 // Loop
 // --------------------------------------------------
 void loop() {
-  bool omgedraaid = tiltVeranderd();
+  bool tiltGewijzigd = tiltVeranderd();
 
-  // Lees knoppen (stijgende flank)
-  bool b1 = digitalRead(button1Pin);
-  bool b2 = digitalRead(button2Pin);
-  bool b3 = digitalRead(button3Pin);
-  bool b4 = digitalRead(button4Pin);
-
-  bool btn1 = (b1 == HIGH && prevBtn1 == LOW);
-  bool btn2 = (b2 == HIGH && prevBtn2 == LOW);
-  bool btn3 = (b3 == HIGH && prevBtn3 == LOW);
-  bool btn4 = (b4 == HIGH && prevBtn4 == LOW);
-
-  prevBtn1 = b1; prevBtn2 = b2; prevBtn3 = b3; prevBtn4 = b4;
+  // Lees knoppen met debounce en stijgende-flankdetectie
+  bool btn1 = knopIngedrukt(button1);
+  bool btn2 = knopIngedrukt(button2);
+  bool btn3 = knopIngedrukt(button3);
+  bool btn4 = knopIngedrukt(button4);
 
   switch (currentState) {
     case STARTSCHERM:   handleStartscherm(btn1, btn4);                break;
     case MENU_STUDIE:   handleMenuStudie(btn1, btn2, btn3, btn4);     break;
     case MENU_PAUZE:    handleMenuPauze(btn1, btn2, btn3, btn4);      break;
-    case MENU_KLAAR:    handleMenuKlaar(btn1, omgedraaid);            break;
+    case MENU_KLAAR:    handleMenuKlaar(btn1, tiltGewijzigd);        break;
     case STUDIE_TIMER:  handleStudieTimer();                          break;
-    case STUDIE_KLAAR:  handleStudieKlaar(omgedraaid);                break;
+    case STUDIE_KLAAR:  handleStudieKlaar(tiltGewijzigd);            break;
     case PAUZE_TIMER:   handlePauzeTimer();                           break;
-    case PAUZE_KLAAR:   handlePauzeKlaar(omgedraaid);                 break;
+    case PAUZE_KLAAR:   handlePauzeKlaar(tiltGewijzigd);             break;
   }
 
   delay(50);
