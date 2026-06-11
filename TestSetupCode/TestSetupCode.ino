@@ -17,15 +17,21 @@ const int button4Pin = A4;  // start
 const int tiltPin = A5;
 
 // RGB-ledtype: false = common cathode, true = common anode
-// Zet dit op true wanneer jouw leds omgekeerd reageren.
+// Zet dit op true wanneer de leds omgekeerd reageren.
 const bool RGB_COMMON_ANODE = false;
 
-// RGB LED 1 (boven)
+// Oriëntatie van de fysieke zandklok.
+// true: bij LOW van de tilt-switch zit ledgroep 1 fysiek boven.
+// false: bij LOW van de tilt-switch zit ledgroep 2 fysiek boven.
+// Verander dit wanneer het zandloper-effect in de verkeerde richting loopt.
+const bool TILT_LOW_MEANS_LED1_IS_TOP = true;
+
+// RGB-ledgroep 1: de twee leds in fysieke helft A
 const int led1R = 9;
 const int led1G = 10;
 const int led1B = 11;
 
-// RGB LED 2 (onder)
+// RGB-ledgroep 2: de twee leds in fysieke helft B
 const int led2R = 3;
 const int led2G = 5;
 const int led2B = 6;
@@ -79,7 +85,7 @@ struct ButtonState {
   unsigned long lastChangeTime;
 };
 
-const unsigned long BUTTON_DEBOUNCE_MS = 50;
+const unsigned long BUTTON_DEBOUNCE_MS = 20;
 
 ButtonState button1 = { button1Pin, LOW, LOW, 0 };
 ButtonState button2 = { button2Pin, LOW, LOW, 0 };
@@ -128,7 +134,29 @@ void ledsUit() {
   setLED2(0, 0, 0);
 }
 
-// Zandloper-effect: boven dimt, onder licht op
+// Bepaal na iedere draai welke fysieke helft werkelijk boven zit.
+bool led1IsBoven() {
+  bool tiltIsLow = (stableTiltState == LOW);
+  return TILT_LOW_MEANS_LED1_IS_TOP ? tiltIsLow : !tiltIsLow;
+}
+
+void setBovenLEDs(int r, int g, int b) {
+  if (led1IsBoven()) {
+    setLED1(r, g, b);
+  } else {
+    setLED2(r, g, b);
+  }
+}
+
+void setOnderLEDs(int r, int g, int b) {
+  if (led1IsBoven()) {
+    setLED2(r, g, b);
+  } else {
+    setLED1(r, g, b);
+  }
+}
+
+// Zandloper-effect: de fysiek bovenste helft dimt, de onderste licht op
 void updateStudieLEDs() {
   unsigned long verstreken = millis() - timerStart;
   if (verstreken >= huidigeDuur) verstreken = huidigeDuur;
@@ -136,8 +164,8 @@ void updateStudieLEDs() {
   int boven = map(verstreken, 0, huidigeDuur, 255, 0);
   int onder = map(verstreken, 0, huidigeDuur, 0, 255);
 
-  setLED1(0, 0, boven);
-  setLED2(0, 0, onder);
+  setBovenLEDs(0, 0, boven);
+  setOnderLEDs(0, 0, onder);
 }
 
 void updatePauzeLEDs() {
@@ -148,10 +176,10 @@ void updatePauzeLEDs() {
   int onder = map(verstreken, 0, huidigeDuur, 0, 255);
 
   switch (pauzeKleur) {
-    case 0: setLED1(boven, 0, 0);          setLED2(onder, 0, 0);          break; // rood
-    case 1: setLED1(0, boven, 0);          setLED2(0, onder, 0);          break; // groen
-    case 2: setLED1(boven, boven, 0);      setLED2(onder, onder, 0);      break; // geel
-    case 3: setLED1(boven/2, 0, boven);    setLED2(onder/2, 0, onder);    break; // paars
+    case 0: setBovenLEDs(boven, 0, 0);          setOnderLEDs(onder, 0, 0);          break; // rood
+    case 1: setBovenLEDs(0, boven, 0);          setOnderLEDs(0, onder, 0);          break; // groen
+    case 2: setBovenLEDs(boven, boven, 0);      setOnderLEDs(onder, onder, 0);      break; // geel
+    case 3: setBovenLEDs(boven/2, 0, boven);    setOnderLEDs(onder/2, 0, onder);    break; // paars
   }
 }
 
@@ -430,5 +458,5 @@ void loop() {
     case PAUZE_KLAAR:   handlePauzeKlaar(tiltGewijzigd);             break;
   }
 
-  delay(50);
+  delay(5);
 }
