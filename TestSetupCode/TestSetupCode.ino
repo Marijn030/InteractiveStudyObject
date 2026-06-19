@@ -447,15 +447,25 @@ void loop() {
   bool btn3 = knopIngedrukt(button3);
   bool btn4 = knopIngedrukt(button4);
 
+  // Menuknop werkt altijd als terug-naar-menu,
+  // behalve als je al in het menu bent.
+  if (btn1 &&
+      currentState != MENU_STUDIE &&
+      currentState != MENU_PAUZE) {
+    ledsUit();
+    naarMenuStudie();
+    return;
+  }
+
   switch (currentState) {
     case STARTSCHERM:   handleStartscherm(btn1, btn4);                break;
     case MENU_STUDIE:   handleMenuStudie(btn1, btn2, btn3, btn4);     break;
     case MENU_PAUZE:    handleMenuPauze(btn1, btn2, btn3, btn4);      break;
-    case MENU_KLAAR:    handleMenuKlaar(btn1, tiltGewijzigd);        break;
+    case MENU_KLAAR:    handleMenuKlaar(btn1, tiltGewijzigd);         break;
     case STUDIE_TIMER:  handleStudieTimer();                          break;
-    case STUDIE_KLAAR:  handleStudieKlaar(tiltGewijzigd);            break;
+    case STUDIE_KLAAR:  handleStudieKlaar(tiltGewijzigd);             break;
     case PAUZE_TIMER:   handlePauzeTimer();                           break;
-    case PAUZE_KLAAR:   handlePauzeKlaar(tiltGewijzigd);             break;
+    case PAUZE_KLAAR:   handlePauzeKlaar(tiltGewijzigd);              break;
   }
 
   delay(5);
