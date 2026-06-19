@@ -13,7 +13,7 @@ const int button2Pin = A2;  // -1 min
 const int button3Pin = A3;  // +1 min
 const int button4Pin = A4;  // start
 
-// Tilt sensor (INPUT_PULLUP → LOW = upright, HIGH = flipped)
+// Tilt sensor (INPUT_PULLUP dan LOW = upright, HIGH = flipped)
 const int tiltPin = A5;
 
 // RGB-ledtype: false = common cathode, true = common anode
@@ -35,6 +35,9 @@ const int led1B = 9;
 const int led2R = 6;
 const int led2G = 5;
 const int led2B = 3;
+
+unsigned long wachtStart = 0;
+const unsigned long WACHT_TIMEOUT = 120000; // 2 minuten
 
 // --------------------------------------------------
 // State machine
@@ -246,6 +249,7 @@ void naarMenuPauze() {
 
 void naarMenuKlaar() {
   currentState = MENU_KLAAR;
+  wachtStart = millis();
   lcdRegel(0, "Ready to start?");
   lcdRegel(1, "Flip hourglass!");
 }
@@ -291,9 +295,9 @@ void handleStartscherm(bool btn1, bool btn4) {
   }
 
   if (btn1) {
-    naarMenuStudie();   // tandwiel → instellingen
+    naarMenuStudie();   // tandwiel dan naar instellingen
   } else if (btn4) {
-    naarMenuKlaar();    // start → direct naar klaar-scherm
+    naarMenuKlaar();    // start dan direct naar klaar-scherm
   }
 }
 
@@ -309,7 +313,7 @@ void handleMenuStudie(bool btn1, bool btn2, bool btn3, bool btn4) {
     lcdRegel(1, buf);
   }
 
-  if (btn1 || btn4) naarMenuPauze(); // tandwiel of start → door naar pauze menu
+  if (btn1 || btn4) naarMenuPauze(); // tandwiel of start dan door naar pauze menu
 }
 
 void handleMenuPauze(bool btn1, bool btn2, bool btn3, bool btn4) {
@@ -324,14 +328,16 @@ void handleMenuPauze(bool btn1, bool btn2, bool btn3, bool btn4) {
     lcdRegel(1, buf);
   }
 
-  if (btn1 || btn4) naarMenuKlaar(); // tandwiel of start → klaar scherm
+  if (btn1 || btn4) naarMenuKlaar(); // tandwiel of start dan klaar scherm
 }
 
 void handleMenuKlaar(bool btn1, bool tiltGewijzigd) {
   if (btn1) {
-    naarMenuStudie();       // tandwiel → terug naar instellingen
+    naarMenuStudie();
   } else if (tiltGewijzigd) {
-    startStudieTimer();     // omdraaien → start!
+    startStudieTimer();
+  } else if (millis() - wachtStart >= WACHT_TIMEOUT) {
+    naarStartscherm();
   }
 }
 
@@ -342,6 +348,7 @@ void handleStudieTimer() {
 
   if (verstreken >= huidigeDuur) {
     currentState = STUDIE_KLAAR;
+    wachtStart = millis();
     lcdRegel(0, "Time for a break");
     lcdRegel(1, "Flip hourglass!");
     ledsUit();
@@ -351,7 +358,12 @@ void handleStudieTimer() {
 
 void handleStudieKlaar(bool omgedraaid) {
   updateBlinkLEDs();
-  if (omgedraaid) startPauzeTimer();
+
+  if (omgedraaid) {
+    startPauzeTimer();
+  } else if (millis() - wachtStart >= WACHT_TIMEOUT) {
+    naarStartscherm();
+  }
 }
 
 void handlePauzeTimer() {
@@ -361,6 +373,7 @@ void handlePauzeTimer() {
 
   if (verstreken >= huidigeDuur) {
     currentState = PAUZE_KLAAR;
+    wachtStart = millis();
     lcdRegel(0, "Break over!");
     lcdRegel(1, "Flip hourglass!");
     ledsUit();
@@ -370,7 +383,12 @@ void handlePauzeTimer() {
 
 void handlePauzeKlaar(bool omgedraaid) {
   updateBlinkLEDs();
-  if (omgedraaid) startStudieTimer();
+
+  if (omgedraaid) {
+    startStudieTimer();
+  } else if (millis() - wachtStart >= WACHT_TIMEOUT) {
+    naarStartscherm();
+  }
 }
 
 // --------------------------------------------------
@@ -392,7 +410,7 @@ bool tiltVeranderd() {
 }
 
 // --------------------------------------------------
-// Knop debounce: geeft true terug bij een stabiele LOW → HIGH-overgang
+// Knop debounce: geeft true terug bij een stabiele LOW naar HIGH-overgang
 // --------------------------------------------------
 bool knopIngedrukt(ButtonState &button) {
   bool reading = digitalRead(button.pin);
