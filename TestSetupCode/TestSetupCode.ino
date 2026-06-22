@@ -461,8 +461,8 @@ void loop() {
 
   // Lees knoppen met debounce en stijgende-flankdetectie
   bool btn1 = knopIngedrukt(button1);
-  bool btn2 = knopIngedrukt(button2);
-  bool btn3 = knopIngedrukt(button3);
+  bool btn2 = false;
+  bool btn3 = false;
   bool btn4 = knopIngedrukt(button4);
 
   // Menuknop werkt altijd als terug-naar-menu,
