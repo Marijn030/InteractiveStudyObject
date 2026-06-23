@@ -7,11 +7,14 @@ const int rs = 12, en = 8, d4 = 7, d5 = 4, d6 = A0, d7 = 2;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 // Buttons (active HIGH, external pull-down)
-// Knop 1 = tandwiel, Knop 2 = -1 min, Knop 3 = +1 min, Knop 4 = start
-const int button1Pin = A1;  // tandwiel
-const int button2Pin = A2;  // -1 min
-const int button3Pin = A3;  // +1 min
-const int button4Pin = A4;  // start
+// Knop 1 = menu / tandwiel
+// Knop 2 = uitgeschakeld
+// Knop 3 = uitgeschakeld
+// Knop 4 = tijd kiezen / start
+const int button1Pin = A1;  // menu / tandwiel
+const int button2Pin = A2;  // uitgeschakeld
+const int button3Pin = A3;  // uitgeschakeld
+const int button4Pin = A4;  // tijd kiezen / start
 
 // Tilt sensor (INPUT_PULLUP dan LOW = upright, HIGH = flipped)
 const int tiltPin = A5;
@@ -36,6 +39,7 @@ const int led2R = 6;
 const int led2G = 5;
 const int led2B = 3;
 
+// Timeout wanneer er gewacht wordt op flippen
 unsigned long wachtStart = 0;
 const unsigned long WACHT_TIMEOUT = 120000; // 2 minuten
 
@@ -55,10 +59,19 @@ enum State {
 State currentState = STARTSCHERM;
 
 // --------------------------------------------------
-// Timer instellingen (instelbaar via menu)
+// Timer instellingen
 // --------------------------------------------------
 int studieminuten = 25;
 int pauzeminuten  = 5;
+
+// Vaste keuzes voor knop 4 in het menu
+const int studieOpties[] = {1, 5, 10, 15, 25, 30};
+const int aantalStudieOpties = 6;
+int studieIndex = 4; // start op 25 minuten
+
+const int pauzeOpties[] = {1, 5, 10};
+const int aantalPauzeOpties = 3;
+int pauzeIndex = 1; // start op 5 minuten
 
 unsigned long timerStart  = 0;
 unsigned long huidigeDuur = 0;
@@ -91,8 +104,6 @@ struct ButtonState {
 const unsigned long BUTTON_DEBOUNCE_MS = 20;
 
 ButtonState button1 = { button1Pin, LOW, LOW, 0 };
-ButtonState button2 = { button2Pin, LOW, LOW, 0 };
-ButtonState button3 = { button3Pin, LOW, LOW, 0 };
 ButtonState button4 = { button4Pin, LOW, LOW, 0 };
 
 // --------------------------------------------------
@@ -190,8 +201,12 @@ void updateBlinkLEDs() {
   if (millis() - lastBlinkTime >= BLINK_INTERVAL) {
     lastBlinkTime = millis();
     blinkOn = !blinkOn;
-    if (blinkOn) { setLED1(255, 255, 255); setLED2(255, 255, 255); }
-    else           ledsUit();
+    if (blinkOn) {
+      setLED1(255, 255, 255);
+      setLED2(255, 255, 255);
+    } else {
+      ledsUit();
+    }
   }
 }
 
@@ -218,6 +233,18 @@ void toonMinuten(unsigned long verstreken, unsigned long totaal) {
   lcdRegel(1, buf);
 }
 
+void toonStudieMinuten() {
+  char buf[17];
+  snprintf(buf, sizeof(buf), "%d min", studieminuten);
+  lcdRegel(1, buf);
+}
+
+void toonPauzeMinuten() {
+  char buf[17];
+  snprintf(buf, sizeof(buf), "%d min", pauzeminuten);
+  lcdRegel(1, buf);
+}
+
 // --------------------------------------------------
 // State starters
 // --------------------------------------------------
@@ -234,22 +261,20 @@ void naarMenuStudie() {
   currentState = MENU_STUDIE;
   ledsUit();
   lcdRegel(0, "Study time:");
-  char buf[17];
-  snprintf(buf, sizeof(buf), "%d min", studieminuten);
-  lcdRegel(1, buf);
+  toonStudieMinuten();
 }
 
 void naarMenuPauze() {
   currentState = MENU_PAUZE;
+  ledsUit();
   lcdRegel(0, "Break time:");
-  char buf[17];
-  snprintf(buf, sizeof(buf), "%d min", pauzeminuten);
-  lcdRegel(1, buf);
+  toonPauzeMinuten();
 }
 
 void naarMenuKlaar() {
   currentState = MENU_KLAAR;
   wachtStart = millis();
+  ledsUit();
   lcdRegel(0, "Ready to start?");
   lcdRegel(1, "Flip hourglass!");
 }
@@ -295,40 +320,46 @@ void handleStartscherm(bool btn1, bool btn4) {
   }
 
   if (btn1) {
-    naarMenuStudie();   // tandwiel dan naar instellingen
+    naarMenuStudie();   // tandwiel/menu naar instellingen
   } else if (btn4) {
-    naarMenuKlaar();    // start dan direct naar klaar-scherm
+    naarMenuKlaar();    // start direct naar klaar-scherm
   }
 }
 
-void handleMenuStudie(bool btn1, bool btn2, bool btn3, bool btn4) {
-  bool gewijzigd = false;
+void handleMenuStudie(bool btn1, bool btn4) {
+  // Button 4 kiest studietijd: 1, 5, 10, 15, 25, 30
+  if (btn4) {
+    studieIndex++;
+    if (studieIndex >= aantalStudieOpties) {
+      studieIndex = 0;
+    }
 
-  if (btn2 && studieminuten > 1)  { studieminuten--; gewijzigd = true; }
-  if (btn3 && studieminuten < 60) { studieminuten++; gewijzigd = true; }
-
-  if (gewijzigd) {
-    char buf[17];
-    snprintf(buf, sizeof(buf), "%d min", studieminuten);
-    lcdRegel(1, buf);
+    studieminuten = studieOpties[studieIndex];
+    toonStudieMinuten();
   }
 
-  if (btn1 || btn4) naarMenuPauze(); // tandwiel of start dan door naar pauze menu
+  // Button 1 gaat naar pauzetijd-menu
+  if (btn1) {
+    naarMenuPauze();
+  }
 }
 
-void handleMenuPauze(bool btn1, bool btn2, bool btn3, bool btn4) {
-  bool gewijzigd = false;
+void handleMenuPauze(bool btn1, bool btn4) {
+  // Button 4 kiest pauzetijd: 1, 5, 10
+  if (btn4) {
+    pauzeIndex++;
+    if (pauzeIndex >= aantalPauzeOpties) {
+      pauzeIndex = 0;
+    }
 
-  if (btn2 && pauzeminuten > 1)  { pauzeminuten--; gewijzigd = true; }
-  if (btn3 && pauzeminuten < 30) { pauzeminuten++; gewijzigd = true; }
-
-  if (gewijzigd) {
-    char buf[17];
-    snprintf(buf, sizeof(buf), "%d min", pauzeminuten);
-    lcdRegel(1, buf);
+    pauzeminuten = pauzeOpties[pauzeIndex];
+    toonPauzeMinuten();
   }
 
-  if (btn1 || btn4) naarMenuKlaar(); // tandwiel of start dan klaar scherm
+  // Button 1 gaat naar klaar-scherm
+  if (btn1) {
+    naarMenuKlaar();
+  }
 }
 
 void handleMenuKlaar(bool btn1, bool tiltGewijzigd) {
@@ -436,15 +467,15 @@ void setup() {
   lcd.begin(16, 2);
 
   pinMode(button1Pin, INPUT);
-  pinMode(button2Pin, INPUT);
-  pinMode(button3Pin, INPUT);
+  // Button 2 en 3 worden niet meer gebruikt, dus ook niet gelezen.
+  // pinMode(button2Pin, INPUT);
+  // pinMode(button3Pin, INPUT);
   pinMode(button4Pin, INPUT);
   pinMode(tiltPin, INPUT_PULLUP);
 
   pinMode(led1R, OUTPUT); pinMode(led1G, OUTPUT); pinMode(led1B, OUTPUT);
   pinMode(led2R, OUTPUT); pinMode(led2G, OUTPUT); pinMode(led2B, OUTPUT);
 
-  // A3 is aangesloten op een knop en levert daarom geen goede random seed.
   randomSeed(micros());
 
   stableTiltState = digitalRead(tiltPin);
@@ -459,31 +490,30 @@ void setup() {
 void loop() {
   bool tiltGewijzigd = tiltVeranderd();
 
-  // Lees knoppen met debounce en stijgende-flankdetectie
+  // Alleen button 1 en button 4 worden gelezen.
   bool btn1 = knopIngedrukt(button1);
-  bool btn2 = false;
-  bool btn3 = false;
   bool btn4 = knopIngedrukt(button4);
 
-  // Menuknop werkt altijd als terug-naar-menu,
-  // behalve als je al in het menu bent.
+  // Button 1 werkt als terug-naar-menu.
+  // In MENU_STUDIE en MENU_PAUZE wordt button 1 gebruikt om door te gaan.
   if (btn1 &&
       currentState != MENU_STUDIE &&
-      currentState != MENU_PAUZE) {
+      currentState != MENU_PAUZE &&
+      currentState != STARTSCHERM) {
     ledsUit();
     naarMenuStudie();
     return;
   }
 
   switch (currentState) {
-    case STARTSCHERM:   handleStartscherm(btn1, btn4);                break;
-    case MENU_STUDIE:   handleMenuStudie(btn1, btn2, btn3, btn4);     break;
-    case MENU_PAUZE:    handleMenuPauze(btn1, btn2, btn3, btn4);      break;
-    case MENU_KLAAR:    handleMenuKlaar(btn1, tiltGewijzigd);         break;
-    case STUDIE_TIMER:  handleStudieTimer();                          break;
-    case STUDIE_KLAAR:  handleStudieKlaar(tiltGewijzigd);             break;
-    case PAUZE_TIMER:   handlePauzeTimer();                           break;
-    case PAUZE_KLAAR:   handlePauzeKlaar(tiltGewijzigd);              break;
+    case STARTSCHERM:   handleStartscherm(btn1, btn4);        break;
+    case MENU_STUDIE:   handleMenuStudie(btn1, btn4);         break;
+    case MENU_PAUZE:    handleMenuPauze(btn1, btn4);          break;
+    case MENU_KLAAR:    handleMenuKlaar(btn1, tiltGewijzigd); break;
+    case STUDIE_TIMER:  handleStudieTimer();                  break;
+    case STUDIE_KLAAR:  handleStudieKlaar(tiltGewijzigd);     break;
+    case PAUZE_TIMER:   handlePauzeTimer();                   break;
+    case PAUZE_KLAAR:   handlePauzeKlaar(tiltGewijzigd);      break;
   }
 
   delay(5);
