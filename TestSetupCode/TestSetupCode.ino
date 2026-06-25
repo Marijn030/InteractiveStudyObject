@@ -65,9 +65,9 @@ int studieminuten = 25;
 int pauzeminuten  = 5;
 
 // Vaste keuzes voor knop 4 in het menu
-const int studieOpties[] = {1, 5, 10, 15, 25, 30};
-const int aantalStudieOpties = 6;
-int studieIndex = 4; // start op 25 minuten
+const int studieOpties[] = {1, 5, 10, 15, 20, 25, 30};
+const int aantalStudieOpties = 7;
+int studieIndex = 5; // start op 25 minuten
 
 const int pauzeOpties[] = {1, 5, 10};
 const int aantalPauzeOpties = 3;
@@ -292,7 +292,14 @@ void startPauzeTimer() {
   huidigeDuur  = (unsigned long)pauzeminuten * 60UL * 1000UL;
   timerStart   = millis();
   laatstGetoondeMinuut = -1;
-  pauzeKleur   = random(0, 4);
+  
+  int nieuweKleur;
+
+  do {
+  nieuweKleur = random(0, 4);
+} while (nieuweKleur == pauzeKleur);
+
+  pauzeKleur = nieuweKleur;
 
   switch (pauzeKleur) {
     case 0: lcdRegel(0, "Drawer: RED");    break;
