@@ -122,7 +122,7 @@ int laatstGetoondeMinuut = -1;
 // Pauze kleur (1 van 4, random gekozen)
 // --------------------------------------------------
 // 0 = rood, 1 = groen, 2 = geel, 3 = paars
-int pauzeKleur = 0;
+int pauzeKleur = -1;
 
 // --------------------------------------------------
 // Hulpfuncties LED
